@@ -1,121 +1,127 @@
 # IGI 2 Mobile
 
-A native Android launcher and companion for **Project I.G.I. 2: Covert Strike**.
+**Project I.G.I. 2: Covert Strike on Android, in one app.**
 
-The app detects and starts the community native Android port of the game, walks
-you through importing your own PC game folder, keeps all 19 mission briefings
-available offline, and is ready to play playigi.com's browser port full screen
-as soon as that port ships.
+IGI 2 Mobile is a native Kotlin/Compose launcher with the OpenIGI-based engine
+embedded in the same APK. You install one app, point it at your own copy of the
+PC game files, and play. No second APK, no separate download, no browser.
 
-This is an unofficial fan project. It bundles **no game data** and is not
+This is an unofficial fan project. It ships **no game data** and is not
 affiliated with Innerloop Studios, Codemasters, playigi.com, OpenIGI or the
-native port's author.
+engine's author.
 
 ---
 
-## Current status
+## Status
 
-There is no official Android build of I.G.I. 2, and no official browser port
-yet. The situation today:
+| Piece | Status |
+|---|---|
+| Launcher + mission briefings | Included |
+| Vulkan renderer + .NET engine | Embedded in this APK (ARM64) |
+| Game data | **Not included** — you must supply your own `pc/` folder |
+| playigi.com browser port | Still "coming soon"; kept as an optional fallback |
 
-| Way to play | Status | What this app does |
-|---|---|---|
-| Community native port (`rayishere0/IGI-2-Covert-Strike-Android`, package `com.projectigi2.app`) | **Playable.** ARM64 only, requires your own `pc/` folder | Detects it, launches it, links to its releases |
-| playigi.com browser port | **Not published.** The site says "coming soon" | Probes for it, opens it in a full-screen player when live |
-| This app alone | Launcher / briefing reader | No game engine and no game assets |
-
-The browser port probe checks a short list of candidate URLs and only reports
-**LIVE** when the response really is the sequel's page. Until then the app is
-honest about the status instead of showing a dead PLAY button. If the port
-appears at a different URL, paste it into **Settings → Browser port URL** and
-the app will use it without an update.
+The engine is the OpenIGI-based native port by
+[rayishere0](https://github.com/rayishere0/IGI-2-Covert-Strike-Android), merged
+into this app under **GPL-3.0**. Its Java package and JNI entry points are kept
+unchanged so the native library continues to resolve them.
 
 ---
 
 ## Features
 
-- **One PLAY button** that resolves to the best available option: native port
-  first, then the browser port, then the setup guide.
-- **Native port launcher** with package detection, version display, app-info
-  shortcut and release-page link. The other app is never bundled or copied.
-- **All 19 mission briefings** from all three campaigns, stored as plain Kotlin
-  data so they work offline.
-- **Full-screen browser player** for playigi.com: landscape, immersive, screen
-  kept on, zoom disabled, camera permission for co-op QR pairing, and back
-  sends Escape to the page before leaving.
-- **Setup guide** covering the native port, the expected game-folder layout and
-  the folder picker inside the port.
-- **Settings** for port preference (Auto / Native / Browser), a custom browser
-  URL, touch controls, Wi-Fi-only preference and cache clearing.
-- **First-run disclaimer** and an About screen with credits and legal notes.
-
-No analytics, no ads, no accounts, no background services.
+- **One app, one icon** — the launcher opens the embedded game activity
+  directly. Returning players skip the setup screen once a game folder is
+  verified.
+- **Native Vulkan engine** — the port's .NET 10/CoreCLR engine, Vulkan 1.1
+  renderer, OpenAL Soft audio and touch HUD, running inside this package.
+- **In-app game folder import** — the engine copies your `pc/` folder into
+  app-private storage and verifies the structure before enabling PLAY.
+- **All 19 mission briefings** — all three campaigns, readable offline.
+- **Browser fallback** — playigi.com's port can still be opened full screen
+  when it ships, or by pasting its URL in Settings.
+- **No analytics, ads, accounts or background services.**
 
 ---
 
 ## Requirements
 
-**Phone**
-
+- **ARM64 Android phone** (the engine and CoreCLR runtime are `arm64-v8a` only)
 - Android 8.0 (API 26) or newer
-- ARM64 device for the native port (the launcher itself runs on any ABI)
-- Your own legally owned copy of the PC game for the native port
-- Internet only for the browser port or for fetching the native port
+- Vulkan-capable GPU, OpenGL ES 3.0
+- Your own legitimate copy of **Project I.G.I. 2: Covert Strike** for PC
+- About 1 GB free storage for the app plus the copied game files
 
-**Build machine**
-
-- JDK 17
-- Android SDK Platform 34 with Build-Tools 34.0.0
-- Gradle 8.9 via the included wrapper
-
-> The checked-in build uses `compileSdk = 34` / `targetSdk = 34` because that is
-> the platform installed on the development machine. If you have Platform 35,
-> you can bump both values in `app/build.gradle.kts`; nothing in the app needs
-> API 35.
+The launcher UI itself is Compose and runs on other ABIs, but the built-in
+engine requires ARM64.
 
 ---
 
-## Playing with the native port
+## Install
 
-1. Install the community port from
-   [its releases page](https://github.com/rayishere0/IGI-2-Covert-Strike-Android/releases/latest).
-2. Copy the `pc` folder from your I.G.I. 2 installation to the phone, for
-   example to `/sdcard/Download/IGI 2/pc`.
-3. Open the port, choose **SELECT GAME FOLDER**, and pick that `pc` folder.
-4. The port verifies the structure and enables **PLAY**.
-5. Open IGI 2 Mobile and press **PLAY I.G.I. 2** — it launches the port.
-
-Expected folder contents include `igi2.exe`, `config.qvm`, `common/`,
-`missions/`, `menusystem/` and `language/`. This launcher never reads, copies or
-modifies those files; it only starts the other app.
-
----
-
-## Building
+Download `IGI-2-Mobile-2.0.0.apk` from the
+[latest release](https://github.com/Alamshowkatdar/igi2-mobile/releases/latest)
+and sideload it:
 
 ```bash
-# Point Gradle at your SDK (local.properties is git-ignored).
+adb install IGI-2-Mobile-2.0.0.apk
+```
+
+Or install a debug build from source with
+`./gradlew :app:assembleDebug`.
+
+---
+
+## First run
+
+1. Copy the `pc` folder from your I.G.I. 2 installation to the phone, for
+   example `/sdcard/Download/IGI 2/pc`. It must contain `igi2.exe`,
+   `config.qvm`, `common/`, `missions/`, `menusystem/` and `language/`.
+2. Open **IGI 2 Mobile** and press **PLAY I.G.I. 2**.
+3. In the game screen, tap **SELECT GAME FOLDER** and pick that `pc` folder.
+4. The engine verifies the files, copies them into app-private storage and
+   enables **PLAY**. Later launches go straight in once setup is complete.
+5. Pick Vulkan or WebGPU as the renderer if you want to experiment; Vulkan is
+   the default.
+
+The original PC installation is never modified. Uninstalling the app removes
+the copied game files from app storage.
+
+---
+
+## Build
+
+Requirements:
+
+- JDK 17
+- Android SDK Platform 34 + Build-Tools 34.0.0
+- Android NDK `26.1.10909125`
+- CMake `3.22.1` (installed through the SDK)
+- Gradle 8.9 via the included wrapper
+
+```bash
 echo "sdk.dir=$HOME/Android/Sdk" > local.properties
 
-./gradlew :app:assembleDebug     # debug APK
-./gradlew :app:assembleRelease   # unsigned release APK
+./gradlew :app:assembleDebug
+./gradlew :app:assembleRelease
 ```
 
 Output:
 
 - `app/build/outputs/apk/debug/app-debug.apk` (`com.igi2.mobile.debug`)
-- `app/build/outputs/apk/release/app-release.apk` (`com.igi2.mobile`)
+- `app/build/outputs/apk/release/app-release.apk` (`com.igi2.mobile`) — ~65 MB
 
-The debug APK is about 9 MB. Install with:
+The release build runs `lintVital` by default. On machines with a preview
+`android-37.0` platform, AGP's lint crashes parsing that SDK metadata; skip it
+with:
 
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:assembleRelease -x lintVitalRelease -x lintVitalAnalyzeRelease
 ```
 
 ### Release signing
 
-Release signing is optional and read from `keystore.properties` at the project
-root:
+`app/build.gradle.kts` reads signing details from `keystore.properties`:
 
 ```properties
 storeFile=keystore/igi2-release.jks
@@ -124,107 +130,62 @@ keyAlias=igi2
 keyPassword=change-me
 ```
 
+Create your own key if you do not have the project key:
+
 ```bash
 keytool -genkeypair -v -keystore keystore/igi2-release.jks -storetype PKCS12 \
   -alias igi2 -keyalg RSA -keysize 4096 -validity 10000
 ```
 
-`keystore.properties`, `keystore/` and `*.jks` are git-ignored. Back the key up:
-losing it means you cannot update the app under the same package name.
+`keystore.properties`, `keystore/` and `*.jks` are git-ignored. Back the key up.
 
 ---
 
-## How it works
+## Architecture
 
 ```
-MainActivity (Compose)
-  Home / Missions / Setup / Settings / About
-        │
-        ▼
-LauncherRepository (StateFlow + SharedPreferences)
-        │
-        ├─ NativePort ─ package lookup, launch, release page, app info
-        ├─ WebPort    ─ candidate probe, touch flag, URL normalisation
-        └─ Missions   ─ 19 briefings, 3 campaigns
-        │
-        ▼
-WebPortActivity (full-screen landscape WebView)
-```
-
-- **Play resolution** is in `LauncherRepository.playTarget()`. `AUTO` prefers
-  the native port, then a live browser port, then setup. The user can force a
-  choice in Settings.
-- **Native detection** uses `PackageManager` with `<queries>` entries in the
-  manifest so Android 11+ package visibility does not hide the port.
-- **Browser probe** runs on `Dispatchers.IO` with OkHttp, follows redirects and
-  checks both the HTTP status and page markers so the I.G.I. 1 page cannot be
-  mistaken for the sequel.
-- **The player** is a plain `WebView` activity, not Compose, to keep the game
-  surface simple and full screen. Cookies and DOM storage are enabled because
-  the port uses both.
-- **State** is a single `StateFlow<AppState>`. Preferences survive restarts;
-  port status is re-checked when the activity resumes.
-
-### Adding the real browser port URL
-
-When playigi.com publishes the sequel's build, either:
-
-1. Add the URL to `WebPort.CANDIDATES` in
-   `app/src/main/java/com/igi2/mobile/data/Ports.kt`, or
-2. Paste it into **Settings → Browser port URL** and press **CHECK**.
-
-A hand-entered URL is trusted after a successful HTTP response; the built-in
-candidates must also contain a sequel marker.
-
----
-
-## Project layout
-
-```
-app/src/main/java/com/igi2/mobile/
-├── MainActivity.kt              Compose host, navigation, play resolution
-├── Igi2Application.kt           Application entry point
+com.igi2.mobile
+├── MainActivity.kt            Compose launcher, navigation, play resolution
 ├── data/
-│   ├── LauncherRepository.kt    AppState, preferences, play target
-│   ├── Ports.kt                 Native port detection and browser probe
-│   ├── Missions.kt              19 mission briefings
-│   └── Net.kt                   OkHttp client, user agent, connectivity
-├── ui/
-│   ├── Screens.kt               Home, missions, setup, settings, about
-│   ├── Components.kt            Terminal-style shared components
-│   └── Theme.kt                 Near-black / amber / cyan theme
-└── web/
-    └── WebPortActivity.kt       Immersive full-screen browser player
+│   ├── LauncherRepository.kt  StateFlow, preferences, play target
+│   ├── Ports.kt               Embedded engine handle + browser-port probe
+│   ├── Missions.kt            19 mission briefings
+│   └── Net.kt                 OkHttp client and connectivity
+├── ui/                        Home, missions, setup, settings, about
+├── web/WebPortActivity.kt     Optional full-screen browser fallback
+└── com.projectigi2.app/       Embedded engine activity (Java, unchanged package)
+    ├── MainActivity.java      Splash, folder picker, SurfaceView, input, HUD
+    └── NativeEngine.java      JNI bridge into libprojectigi.so
+
+app/src/main/cpp/              JNI bridge + CMake build for libprojectigi.so
+app/src/main/jniLibs/          CoreCLR, OpenAL, WebGPU natives (arm64-v8a)
+app/src/main/assets/managed/   Engine assemblies (no game data)
+app/src/main/assets/public/    Engine UI assets (no game data)
 ```
 
+The Compose launcher starts the engine activity with `auto_play=true`. The
+engine waits for its managed assets to extract, finds the verified game folder
+and the ready `SurfaceView`, then starts the engine loop without an extra PLAY
+tap. The engine's Java package is deliberately `com.projectigi2.app`: changing
+it would break the JNI symbols compiled into `libprojectigi.so`.
+
+The launcher never reads or modifies the game files; the engine activity owns
+the folder picker and the copy into `getFilesDir()/Project IGI 2`.
+
 ---
 
-## Privacy
+## Licence and credits
 
-The app collects nothing and sends nothing except the browser-port probe
-(a normal HTTPS request to playigi.com or the URL you entered) and whatever the
-browser port itself does while you play it. Preferences stay in the app's
-private storage.
-
----
-
-## Credits
+This project is distributed under **GPL-3.0-only**, because it embeds the
+OpenIGI-based engine, which declares the same licence. See [LICENSE](LICENSE).
 
 - **Original game:** Project I.G.I. 2: Covert Strike, Innerloop Studios,
   published by Codemasters (2003). All game content remains with its rights
   holders.
+- **Embedded engine:** [rayishere0/IGI-2-Covert-Strike-Android](https://github.com/rayishere0/IGI-2-Covert-Strike-Android),
+  GPL-3.0, based on the [OpenIGI](https://openigi.com) project.
 - **Mission briefings:** [playigi.com](https://playigi.com), quoted as published.
-- **Native Android port:** [rayishere0/IGI-2-Covert-Strike-Android](https://github.com/rayishere0/IGI-2-Covert-Strike-Android).
-- **Engine research:** the [OpenIGI](https://openigi.com) project.
+- **Runtime components:** .NET/CoreCLR (MIT), OpenAL Soft (LGPL), Vulkan,
+  Silk.NET and SkiaSharp (MIT). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
----
-
-## Legal
-
-This project is an unofficial companion. It ships no game assets, no game
-engine and no APK of the native port. It does not grant you any rights to the
-game. You must own a legitimate copy of Project I.G.I. 2: Covert Strike to use
-the native port, and you must respect the licences of every third-party project
-involved.
-
-Do not redistribute game data or the native port's APK with this app.
+You must own a legitimate copy of the game. Do not redistribute game data.

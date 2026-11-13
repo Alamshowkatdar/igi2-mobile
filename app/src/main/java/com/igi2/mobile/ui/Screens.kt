@@ -51,13 +51,13 @@ object Legal {
     const val TEXT = "IGI 2 Mobile is an unofficial, fan-made companion for " +
         "Project I.G.I. 2: Covert Strike. It is not affiliated with, endorsed by, or " +
         "sponsored by Innerloop Studios, Codemasters, the current rights holders, " +
-        "playigi.com, or the authors of any Android port.\n\n" +
-        "This app bundles no game data. The community native port is a separate " +
-        "third-party project and needs your own legally owned copy of the PC game. " +
-        "Project I.G.I. 2 and all game content remain the property of their respective " +
-        "rights holders.\n\n" +
+        "playigi.com, or the authors of the embedded engine.\n\n" +
+        "This app contains an OpenIGI-based engine distributed under GPL-3.0, but it " +
+        "bundles no game data. You must own a legitimate copy of the PC game, and the " +
+        "engine copies your own pc folder into app-private storage. Project I.G.I. 2 " +
+        "and all game content remain the property of their respective rights holders.\n\n" +
         "Mission briefing text is quoted from playigi.com for reference. Do not " +
-        "redistribute game data or the native port's APK."
+        "redistribute game data."
 }
 
 @Composable
@@ -73,10 +73,10 @@ fun HomeScreen(
 ) {
     val nativeValue = when {
         state.native != null -> buildString {
-            append("INSTALLED")
+            append("READY")
             state.native.versionName?.takeIf { it.isNotBlank() }?.let { append("  v$it") }
         }
-        state.nativeChecked -> "NOT INSTALLED"
+        state.nativeChecked -> "UNSUPPORTED CPU"
         else -> "CHECKING"
     }
     val nativeTone = when {
@@ -97,7 +97,7 @@ fun HomeScreen(
     }
     val choiceValue = when (state.choice) {
         PortChoice.AUTO -> "AUTO"
-        PortChoice.NATIVE -> "NATIVE PORT"
+        PortChoice.NATIVE -> "BUILT-IN ENGINE"
         PortChoice.WEB -> "BROWSER PORT"
     }
 
@@ -142,7 +142,7 @@ fun HomeScreen(
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Native port",
+                    "Built-in engine",
                     color = Igi2Dim,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
@@ -167,11 +167,11 @@ fun HomeScreen(
             Text(
                 text = when {
                     state.native != null ->
-                        "The community port is installed. PLAY opens it; your game folder and progress stay there."
+                        "The engine is inside this app. PLAY opens it; your game files and progress stay on this phone."
                     state.web.state == WebPortState.LIVE ->
                         "The playigi.com browser port is live. PLAY opens it full screen."
                     else ->
-                        "No playable build is installed yet. Use SETUP GUIDE to get the native port and import your game folder."
+                        "This build needs an ARM64 device. Use SETUP GUIDE to see the requirements and the optional browser fallback."
                 },
                 color = Igi2Dim,
                 fontSize = 11.sp,
@@ -360,14 +360,13 @@ fun SetupScreen(
     state: AppState,
     onBack: () -> Unit,
     onPlay: () -> Unit,
-    onInstallPort: () -> Unit,
     onProjectPage: () -> Unit,
     onCheckAgain: () -> Unit,
     onAppInfo: () -> Unit,
     onOpenWeb: () -> Unit,
     onBriefings: () -> Unit
 ) {
-    val installed = state.native != null
+    val supported = state.native != null
 
     Column(Modifier.fillMaxSize().background(Igi2Black)) {
         TopBar("SETUP GUIDE", onBack)
@@ -381,45 +380,52 @@ fun SetupScreen(
                 SectionLabel("I.G.I. 2 ON ANDROID")
                 Spacer(Modifier.height(8.dp))
                 BodyText(
-                    "There is no official mobile build. Today the game runs through the " +
-                        "community native port; playigi.com's browser port is still listed as " +
-                        "coming soon. This app is the launcher for both."
+                    "The OpenIGI-based engine is built into this app, so there is no second " +
+                        "app to install. You only need your own copy of the PC game files. " +
+                        "playigi.com's browser port remains an optional fallback for when it ships."
                 )
             }
 
             Spacer(Modifier.height(14.dp))
             TerminalPanel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    SectionLabel("01  //  NATIVE PORT")
+                    SectionLabel("01  //  BUILT-IN ENGINE")
                     Grow()
                     StatusPill(
                         "",
-                        if (installed) "INSTALLED" else "NOT INSTALLED",
-                        if (installed) StatusTone.GOOD else StatusTone.WAIT
+                        if (supported) "READY" else "ARM64 REQUIRED",
+                        if (supported) StatusTone.GOOD else StatusTone.WAIT
                     )
                 }
                 Spacer(Modifier.height(8.dp))
                 BodyText(
-                    "A separate, OpenIGI-based ARM64 port of Covert Strike. It ships no game " +
-                        "data: it loads the original files from a folder you own."
+                    "The Vulkan renderer, .NET engine and game activity are inside this APK. " +
+                        "They ship no game data: the engine loads the original files from the " +
+                        "folder you provide."
                 )
                 Spacer(Modifier.height(12.dp))
-                if (installed) {
+                if (supported) {
                     Igi2Button(text = "OPEN I.G.I. 2", primary = true, onClick = onPlay)
                     Spacer(Modifier.height(8.dp))
                     Igi2Button(text = "APP INFO", onClick = onAppInfo)
                 } else {
-                    Igi2Button(text = "GET THE ANDROID PORT", primary = true, onClick = onInstallPort)
+                    Text(
+                        "This engine is ARM64 only. This device reports a different CPU " +
+                            "architecture, so the built-in game cannot start.",
+                        color = Igi2Red,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
                     Spacer(Modifier.height(8.dp))
                     Igi2Button(text = "CHECK AGAIN", onClick = onCheckAgain)
                 }
                 Spacer(Modifier.height(4.dp))
-                TextLink("GITHUB PROJECT", onClick = onProjectPage)
+                TextLink("ENGINE SOURCE (GPL-3.0)", onClick = onProjectPage)
             }
 
             Spacer(Modifier.height(14.dp))
             TerminalPanel {
-                SectionLabel("02  //  COPY YOUR PC GAME FOLDER")
+                SectionLabel("02  //  YOUR PC GAME FOLDER")
                 Spacer(Modifier.height(8.dp))
                 BodyText(
                     "Copy the pc folder from your I.G.I. 2 installation to the phone, for " +
@@ -431,7 +437,7 @@ fun SetupScreen(
                 KeyValueRow("", "menusystem/, language/")
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "The port verifies this structure before it enables PLAY.",
+                    "The engine verifies this structure before it enables PLAY.",
                     color = Igi2Dim,
                     fontSize = 11.sp,
                     lineHeight = 16.sp
@@ -440,16 +446,17 @@ fun SetupScreen(
 
             Spacer(Modifier.height(14.dp))
             TerminalPanel {
-                SectionLabel("03  //  SELECT THE FOLDER IN THE PORT")
+                SectionLabel("03  //  INSTALL THE FILES IN-APP")
                 Spacer(Modifier.height(8.dp))
                 BodyText(
-                    "Open the native port, tap SELECT GAME FOLDER, and choose the pc folder " +
-                        "you copied. The port checks the files and turns PLAY on."
+                    "Press OPEN I.G.I. 2, then SELECT GAME FOLDER and pick the pc folder you " +
+                        "copied. The engine verifies it, copies it into this app's private " +
+                        "storage and enables PLAY. Later launches reuse that copy."
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "This app never reads, copies or modifies your game files. It only starts " +
-                        "the other app.",
+                    "Uninstalling this app removes the copied game files. Your original PC " +
+                        "installation is never modified.",
                     color = Igi2Dim,
                     fontSize = 11.sp,
                     lineHeight = 16.sp
@@ -475,8 +482,8 @@ fun SetupScreen(
                 Spacer(Modifier.height(8.dp))
                 BodyText(
                     "playigi.com publishes all 19 briefings but says the sequel's browser port " +
-                        "is not ready. When it ships, this app plays it full screen. If it is not " +
-                        "detected automatically, paste its URL in Settings."
+                        "is not ready. It is a fallback only: the built-in engine does not need it. " +
+                        "If the port appears at a new address, paste its URL in Settings."
                 )
                 Spacer(Modifier.height(12.dp))
                 if (state.web.state == WebPortState.LIVE) {
@@ -490,8 +497,9 @@ fun SetupScreen(
 
             Spacer(Modifier.height(14.dp))
             Text(
-                "The native port is not affiliated with this app or with playigi.com. Respect " +
-                    "its licence and use your own copy of the game.",
+                "The embedded engine is based on the OpenIGI project and is distributed under " +
+                    "GPL-3.0. It is not affiliated with playigi.com or the original rights " +
+                    "holders. Use your own copy of the game.",
                 color = Igi2Dim,
                 fontSize = 11.sp,
                 lineHeight = 16.sp
@@ -539,7 +547,7 @@ fun SettingsScreen(
                         onClick = { onChoice(PortChoice.AUTO) }
                     )
                     ChoiceButton(
-                        label = "NATIVE",
+                        label = "ENGINE",
                         selected = state.choice == PortChoice.NATIVE,
                         modifier = Modifier.weight(1f),
                         onClick = { onChoice(PortChoice.NATIVE) }
@@ -553,8 +561,8 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "AUTO opens the native port when it is installed, otherwise the browser " +
-                        "port when it is live, otherwise this setup guide.",
+                    "AUTO opens the built-in engine when this device supports it, otherwise " +
+                        "the browser port when it is live, otherwise this setup guide.",
                     color = Igi2Dim,
                     fontSize = 11.sp,
                     lineHeight = 16.sp
@@ -658,7 +666,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Clears cookies and cached pages used by the in-app browser player. It does " +
-                        "not touch the native port, its data, or your game folder.",
+                        "not touch the built-in engine or your copied game files.",
                     color = Igi2Dim,
                     fontSize = 11.sp,
                     lineHeight = 16.sp
@@ -746,7 +754,7 @@ fun AboutScreen(
         ) {
             Text("IGI 2 MOBILE", style = MaterialTheme.typography.headlineSmall, color = Igi2Amber)
             Text(
-                "Version $version  •  unofficial launcher and companion",
+                "Version $version  •  unofficial launcher, companion and engine",
                 color = Igi2Dim,
                 fontSize = 11.sp,
                 lineHeight = 16.sp
@@ -757,10 +765,10 @@ fun AboutScreen(
                 SectionLabel("WHAT THIS IS")
                 Spacer(Modifier.height(6.dp))
                 BodyText(
-                    "A native Kotlin launcher for Project I.G.I. 2: Covert Strike on Android. " +
-                        "It detects and starts the community native port, keeps all 19 campaign " +
-                        "briefings offline, and is ready to play playigi.com's browser port full " +
-                        "screen when that port ships."
+                    "A native Kotlin launcher and embedded OpenIGI engine for Project I.G.I. 2: " +
+                        "Covert Strike on Android. It plays the game from your own PC files, " +
+                        "keeps all 19 campaign briefings offline, and can also open playigi.com's " +
+                        "browser port full screen when that port ships."
                 )
             }
 
@@ -769,9 +777,9 @@ fun AboutScreen(
                 SectionLabel("WHAT IT ISN'T")
                 Spacer(Modifier.height(6.dp))
                 BodyText(
-                    "It is not the game, it contains no game assets, and it is not an official " +
-                        "release. The native port is a separate project that needs your own PC " +
-                        "game folder."
+                    "It is not the game data. The engine is inside this app, but it contains " +
+                        "no game assets and is not an official release. You must supply your own " +
+                        "copy of the PC game files."
                 )
             }
 
@@ -780,8 +788,8 @@ fun AboutScreen(
                 SectionLabel("PORT STATUS")
                 Spacer(Modifier.height(6.dp))
                 KeyValueRow(
-                    "Native port",
-                    if (state.native != null) "INSTALLED" else "NOT INSTALLED",
+                    "Built-in engine",
+                    if (state.native != null) "READY" else "ARM64 REQUIRED",
                     if (state.native != null) Igi2Cyan else Igi2Dim
                 )
                 KeyValueRow(
@@ -794,7 +802,14 @@ fun AboutScreen(
                     },
                     if (state.web.state == WebPortState.LIVE) Igi2Cyan else Igi2Dim
                 )
-                KeyValueRow("Preferred", state.choice.name)
+                KeyValueRow(
+                    "Preferred",
+                    when (state.choice) {
+                        PortChoice.AUTO -> "AUTO"
+                        PortChoice.NATIVE -> "BUILT-IN ENGINE"
+                        PortChoice.WEB -> "BROWSER PORT"
+                    }
+                )
             }
 
             Spacer(Modifier.height(12.dp))
@@ -803,7 +818,7 @@ fun AboutScreen(
                 Spacer(Modifier.height(6.dp))
                 BodyText(
                     "Mission briefings: playigi.com\n" +
-                        "Native Android port: rayishere0 (IGI-2-Covert-Strike-Android)\n" +
+                        "Embedded engine: rayishere0 (IGI-2-Covert-Strike-Android), GPL-3.0\n" +
                         "Engine research: the OpenIGI project\n" +
                         "Original game: Innerloop Studios, published by Codemasters (2003)"
                 )
@@ -819,7 +834,7 @@ fun AboutScreen(
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 TextLink("PLAYIGI") { onOpenUrl("https://playigi.com/missions.html") }
-                TextLink("NATIVE PORT") {
+                TextLink("ENGINE SOURCE") {
                     onOpenUrl("https://github.com/rayishere0/IGI-2-Covert-Strike-Android")
                 }
                 TextLink("OPENIGI") { onOpenUrl("https://openigi.com") }

@@ -2,7 +2,6 @@ package com.igi2.mobile.data
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -12,58 +11,45 @@ import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
 /**
- * The community native Android port of I.G.I. 2 (OpenIGI-based, ARM64).
+ * The OpenIGI-based engine embedded in this app.
  *
- * It is a separate project. This app only detects it, launches it, and points at its releases; it
- * never bundles or redistributes its APK.
+ * The Java package of the engine activity is still `com.projectigi2.app` because the JNI entry
+ * points in `libprojectigi.so` resolve against that name. This launcher is the only exported
+ * entry point; the engine activity is launched explicitly and never appears as a second app.
+ *
+ * The engine is ARM64 only and still requires the player's own `pc/` game folder.
  */
 object NativePort {
 
-    const val PACKAGE = "com.projectigi2.app"
-    val PACKAGES = listOf(PACKAGE, "com.projectigi2.android")
+    const val VERSION = "2.0.0"
+    const val ACTIVITY = "com.projectigi2.app.MainActivity"
+    const val EXTRA_AUTO_PLAY = "auto_play"
 
-    const val RELEASE_URL =
-        "https://github.com/rayishere0/IGI-2-Covert-Strike-Android/releases/latest"
     const val PROJECT_URL =
         "https://github.com/rayishere0/IGI-2-Covert-Strike-Android"
 
     data class Install(val packageName: String, val versionName: String?)
 
-    fun find(context: Context): Install? {
-        val manager = context.packageManager
-        for (packageName in PACKAGES) {
-            val info = try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    manager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
-                } else {
-                    @Suppress("DEPRECATION")
-                    manager.getPackageInfo(packageName, 0)
-                }
-            } catch (_: PackageManager.NameNotFoundException) {
-                continue
-            }
-            return Install(packageName, info.versionName)
-        }
-        return null
-    }
+    val isSupported: Boolean
+        get() = Build.SUPPORTED_ABIS.any { it.equals("arm64-v8a", ignoreCase = true) }
+
+    fun find(context: Context): Install? =
+        if (isSupported) Install(context.packageName, VERSION) else null
 
     fun launch(context: Context): Boolean {
-        val install = find(context) ?: return false
-        val intent = context.packageManager.getLaunchIntentForPackage(install.packageName)
-            ?: return false
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (!isSupported) return false
+        val intent = Intent()
+            .setClassName(context.packageName, ACTIVITY)
+            .putExtra(EXTRA_AUTO_PLAY, true)
         return runCatching { context.startActivity(intent) }.isSuccess
     }
-
-    fun openReleasePage(context: Context) = open(context, RELEASE_URL)
 
     fun openProjectPage(context: Context) = open(context, PROJECT_URL)
 
     fun openAppInfo(context: Context) {
-        val install = find(context) ?: return
         val intent = Intent(
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.parse("package:${install.packageName}")
+            Uri.parse("package:${context.packageName}")
         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
     }

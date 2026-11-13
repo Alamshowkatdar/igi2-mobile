@@ -92,7 +92,7 @@ private fun App(repository: LauncherRepository) {
         when (repository.playTarget()) {
             PlayTarget.NATIVE -> {
                 if (!NativePort.launch(context)) {
-                    repository.message("Could not start the native port.")
+                    repository.message("Could not start the built-in engine.")
                     screen = Screen.SETUP
                 }
             }
@@ -150,7 +150,6 @@ private fun App(repository: LauncherRepository) {
                 state = state,
                 onBack = { screen = Screen.HOME },
                 onPlay = play,
-                onInstallPort = { NativePort.openReleasePage(context) },
                 onProjectPage = { NativePort.openProjectPage(context) },
                 onCheckAgain = { repository.refreshPorts() },
                 onAppInfo = { NativePort.openAppInfo(context) },

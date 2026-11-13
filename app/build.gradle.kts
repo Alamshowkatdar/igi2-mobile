@@ -15,16 +15,36 @@ val keystoreProps = Properties().apply {
 android {
     namespace = "com.igi2.mobile"
     compileSdk = 34
+    ndkVersion = "26.1.10909125"
 
     defaultConfig {
         applicationId = "com.igi2.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "2.0.0"
 
         vectorDrawables {
             useSupportLibrary = true
+        }
+
+        // The embedded engine and its CoreCLR runtime are ARM64 only.
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf("-std=c++17", "-frtti", "-fexceptions")
+                arguments += "-DANDROID_STL=c++_shared"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
@@ -77,6 +97,10 @@ android {
     }
 
     packaging {
+        jniLibs {
+            // CoreCLR and the engine load their companions from the extracted native lib dir.
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
@@ -95,6 +119,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
