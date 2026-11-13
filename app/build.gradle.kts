@@ -121,6 +121,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
+    // Unpacks Inno Setup installers (the GOG/retail setup.exe) on-device. MIT-licensed,
+    // with an ARM64 native port of innoextract.
+    implementation("uk.co.armedpineapple.innoextract:service:2.1.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

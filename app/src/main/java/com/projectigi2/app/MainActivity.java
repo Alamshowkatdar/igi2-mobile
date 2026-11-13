@@ -3,8 +3,10 @@ package com.projectigi2.app;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
+import android.content.ComponentName;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
@@ -33,6 +35,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.IBinder;
+import android.os.StatFs;
 import android.os.SystemClock;
 import android.provider.MediaStore;
 import android.util.Log;
@@ -66,10 +70,15 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
+import uk.co.armedpineapple.innoextract.service.ExtractCallback;
+import uk.co.armedpineapple.innoextract.service.ExtractService;
+import uk.co.armedpineapple.innoextract.service.InnoValidationResult;
+
 public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final String TAG = "ProjectIGI2";
     private static final String ASSET_VERSION = "v23_igi2_menus";
     private static final int REQUEST_SELECT_GAME_FOLDER = 2001;
+    private static final int REQUEST_SELECT_SETUP_EXE = 2002;
     private static final int REQUEST_STORAGE_PERMISSIONS = 1002;
     private static final String PREFS_NAME = "projectigi_prefs";
     private static final String PREF_RENDERER_BACKEND = "renderer_backend";
@@ -80,10 +89,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private TextView statusText;
     private ProgressBar progressBar;
     private Button selectFolderBtn;
+    private Button installSetupBtn;
     private Button playBtn;
     private Button vulkanBtn;
     private Button webGpuBtn;
     private String rendererBackend = "vulkan";
+
+    // On-device setup.exe installation: the picked document, the bound innoextract
+    // service, and the state its asynchronous callbacks drive.
+    private ExtractService extractService;
+    private boolean extractServiceBound = false;
+    private Uri pendingSetupUri = null;
+    private boolean installFromSetupRunning = false;
+    private long lastSetupProgressUiMs = 0;
 
     private boolean isExtracted = false;
     private boolean isGameFolderVerified = false;
@@ -112,7 +130,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private EditText hiddenInput;
     private Handler imeHandler;
     private Runnable imePoller;
-    private boolean imeShown = false;
+    // Throttles showSoftKeyboard() retries so a poll every 250 ms does not call into the
+    // IME four times a second when the engine keeps reporting a focused field.
+    private long lastImeShowAttemptMs = 0;
+    // A Java-side keyboard toggle. The retail menu is drawn by the engine, so its own
+    // keyboard icon (if a given menu even draws one) cannot be reached reliably. This
+    // button is always available on the menu, and on any screen where the engine says a
+    // text field is focused, so there is always a way to bring the IME up.
+    private Button keyboardButton;
+    private boolean keyboardButtonShown = false;
     // Socials: a small button in the top-left corner of the file-picker screen and
     // the main menu, opening a popup with Discord + Reddit links. A native View, not
     // a managed overlay: the retail menu is drawn from menu data, and there is no
@@ -289,7 +315,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         subtitleText.setTypeface(Typeface.MONOSPACE);
         subtitleText.setGravity(Gravity.CENTER);
         subtitleText.setPadding(0, (int)(4 * density), 0, (int)(16 * density));
-        subtitleText.setText("AUTHENTIC GAME FILES REQUIRED");
+        subtitleText.setText("SETUP.EXE OR A GAME FOLDER");
         cardLayout.addView(subtitleText);
 
         // Glowing progress bar
@@ -391,6 +417,28 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         btnRow.addView(playBtn, playLp);
 
         cardLayout.addView(btnRow);
+
+        // 3. Install straight from the retail/GOG setup.exe. Many players only have
+        // the installer, not an already-unpacked pc folder, and Android cannot run a
+        // Windows .exe — so the app unpacks it in-process with innoextract instead.
+        installSetupBtn = new Button(this);
+        installSetupBtn.setText("INSTALL FROM SETUP.EXE");
+        installSetupBtn.setTextSize(11);
+        installSetupBtn.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        installSetupBtn.setTextColor(Color.WHITE);
+
+        GradientDrawable setupBg = new GradientDrawable();
+        setupBg.setColor(Color.rgb(60, 42, 18));
+        setupBg.setStroke((int)(1.5f * density), Color.rgb(235, 170, 70));
+        setupBg.setCornerRadius(6 * density);
+        installSetupBtn.setBackground(setupBg);
+
+        LinearLayout.LayoutParams setupLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, (int)(44 * density));
+        setupLp.topMargin = (int)(10 * density);
+        installSetupBtn.setOnClickListener(v -> openSetupExePicker());
+        cardLayout.addView(installSetupBtn, setupLp);
+
         splashLayout.addView(cardLayout, cardParams);
 
         rootLayout.addView(splashLayout, new FrameLayout.LayoutParams(
@@ -407,6 +455,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         // Load Game button: bottom-left, shown on the main menu except the credits screen.
         // Its visibility is polled below, next to the socials and GitHub buttons'.
         setupLoadGameButton();
+
+        // Soft-keyboard toggle: bottom-right, shown whenever the retail menu is up or the
+        // engine reports a focused text field. The retail menus do not route touches to
+        // the engine's own keyboard icon on every screen, so this is the reliable way to
+        // bring up the IME for profile names and any other menu text.
+        setupKeyboardButton();
 
         setContentView(rootLayout);
 
@@ -614,9 +668,347 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
     }
 
+    private void openSetupExePicker() {
+        if (installFromSetupRunning) {
+            Toast.makeText(this, "An installation is already running.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+            "application/octet-stream",
+            "application/x-msdownload",
+            "application/vnd.microsoft.portable-executable"
+        });
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+            | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQUEST_SELECT_SETUP_EXE);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to open setup.exe picker", e);
+            Toast.makeText(this, "No file picker available", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // On-device setup.exe installation.
+    //
+    // Android cannot execute a Windows installer, so this uses the bundled
+    // innoextract native library through its bound service. It unpacks the
+    // Inno Setup container into app storage, locates the game's data root,
+    // puts config.qvm where the engine expects it, and moves the result into
+    // getFilesDir()/Project IGI 2 — the same folder the SAF importer fills.
+    // ------------------------------------------------------------------
+
+    private final ServiceConnection extractConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder binder) {
+            extractService = ((ExtractService.ServiceBinder) binder).getService();
+            extractServiceBound = true;
+            Uri uri = pendingSetupUri;
+            pendingSetupUri = null;
+            if (uri != null) {
+                beginSetupInstall(uri);
+            }
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            extractService = null;
+            extractServiceBound = false;
+        }
+    };
+
+    private void bindExtractServiceAndInstall(Uri uri) {
+        installFromSetupRunning = true;
+        runOnUiThread(() -> {
+            installSetupBtn.setEnabled(false);
+            progressBar.setVisibility(View.VISIBLE);
+            progressBar.setIndeterminate(true);
+            statusText.setText("CHECKING SETUP.EXE...");
+        });
+        if (extractServiceBound && extractService != null) {
+            beginSetupInstall(uri);
+        } else {
+            pendingSetupUri = uri;
+            try {
+                bindService(new Intent(this, ExtractService.class),
+                    extractConnection, BIND_AUTO_CREATE);
+            } catch (Exception e) {
+                Log.e(TAG, "Could not bind the installer service", e);
+                failSetupInstall("INSTALLER SERVICE UNAVAILABLE");
+            }
+        }
+    }
+
+    private void beginSetupInstall(Uri uri) {
+        new Thread(() -> {
+            try {
+                InnoValidationResult result = extractService.check(uri);
+                if (result == null || !result.isValid()) {
+                    failSetupInstall("THIS FILE IS NOT AN INNO SETUP INSTALLER");
+                    return;
+                }
+                String title = result.getTitle();
+                String version = result.getVersion();
+                if (title == null || title.isEmpty()) title = "I.G.I. 2";
+                final String label = title;
+                final String versionLabel = version == null ? "" : version;
+                Log.i(TAG, "Setup installer: " + title + " " + versionLabel
+                    + ", GOG=" + result.isGogInstaller());
+                runOnUiThread(() -> statusText.setText(
+                    "INSTALLER: " + label.toUpperCase(Locale.US) + " — EXTRACTING..."));
+
+                StatFs stat = new StatFs(getFilesDir().getAbsolutePath());
+                long freeBytes = stat.getAvailableBytes();
+                if (freeBytes < 3_500_000_000L) {
+                    failSetupInstall("NOT ENOUGH FREE SPACE — NEED ABOUT 3.5 GB");
+                    return;
+                }
+
+                File extractDir = new File(getFilesDir(), "setup_extract");
+                deleteRecursively(extractDir);
+                if (!extractDir.mkdirs() && !extractDir.isDirectory()) {
+                    failSetupInstall("CANNOT CREATE TEMP FOLDER");
+                    return;
+                }
+                runOnUiThread(() -> {
+                    progressBar.setIndeterminate(false);
+                    progressBar.setMax(100);
+                    progressBar.setProgress(0);
+                });
+                lastSetupProgressUiMs = 0;
+                extractService.extract(uri, extractDir, new ExtractCallback() {
+                    @Override
+                    public void onProgress(long value, long max, String file) {
+                        if (max <= 0) {
+                            return;
+                        }
+                        long now = SystemClock.uptimeMillis();
+                        int pct = (int) Math.max(0, Math.min(100, (value * 100L) / max));
+                        if (pct < 100 && now - lastSetupProgressUiMs < 200) {
+                            return;
+                        }
+                        lastSetupProgressUiMs = now;
+                        runOnUiThread(() -> {
+                            progressBar.setProgress(pct);
+                            statusText.setText("EXTRACTING SETUP.EXE... " + pct + "%");
+                        });
+                    }
+
+                    @Override
+                    public void onSuccess() {
+                        runOnUiThread(() -> {
+                            progressBar.setProgress(100);
+                            statusText.setText("EXTRACTED — INSTALLING GAME FILES...");
+                        });
+                        finishSetupInstall(extractDir);
+                    }
+
+                    @Override
+                    public void onFailure(Exception e) {
+                        Log.e(TAG, "Setup extraction failed", e);
+                        failSetupInstall("SETUP EXTRACTION FAILED");
+                    }
+                }, new uk.co.armedpineapple.innoextract.service.Configuration(false, false));
+            } catch (Throwable t) {
+                Log.e(TAG, "Setup check failed", t);
+                failSetupInstall("COULD NOT READ SETUP.EXE");
+            }
+        }, "setup-check").start();
+    }
+
+    private void finishSetupInstall(File extractDir) {
+        new Thread(() -> {
+            File target = new File(getFilesDir(), "Project IGI 2");
+            File old = new File(getFilesDir(), "Project IGI 2.old");
+            try {
+                File root = findGameDataRoot(extractDir, 0);
+                if (root == null) {
+                    failSetupInstall("INSTALLER DID NOT CONTAIN I.G.I. 2 GAME FILES");
+                    return;
+                }
+
+                // GOG installers keep the retail config.qvm in __support/app, not in
+                // the game root. The engine reads config.qvm from the data root, so
+                // copy it there when the installer did not already place it.
+                File rootConfig = new File(root, "config.qvm");
+                if (!rootConfig.isFile()) {
+                    File foundConfig = findFileNamed(extractDir, "config.qvm", 0);
+                    if (foundConfig != null && foundConfig.isFile()) {
+                        copyFile(foundConfig, rootConfig);
+                        Log.i(TAG, "Copied config.qvm from " + foundConfig.getAbsolutePath());
+                    }
+                }
+                if (!rootConfig.isFile()) {
+                    failSetupInstall("GAME FILES ARE MISSING config.qvm");
+                    return;
+                }
+
+                // Replace the old install only after a complete, verified extraction.
+                deleteRecursively(old);
+                if (target.exists() && !target.renameTo(old)) {
+                    deleteRecursively(target);
+                }
+
+                // Same filesystem: renaming the extracted root into place is instant
+                // and does not need a second full copy of ~1.6 GB.
+                boolean moved = root.renameTo(target);
+                if (!moved) {
+                    Log.w(TAG, "Rename failed; copying the extracted game files instead");
+                    runOnUiThread(() -> {
+                        progressBar.setIndeterminate(true);
+                        statusText.setText("COPYING GAME FILES...");
+                    });
+                    copyDirectory(root, target);
+                }
+                deleteRecursively(old);
+                deleteRecursively(extractDir);
+
+                if (!checkExistingGameFolder()) {
+                    failSetupInstall("INSTALLED FILES FAILED VERIFICATION");
+                    return;
+                }
+                runOnUiThread(() -> {
+                    progressBar.setIndeterminate(false);
+                    progressBar.setProgress(100);
+                    statusText.setText("GAME FILES VERIFIED & READY!");
+                    installFromSetupRunning = false;
+                    installSetupBtn.setEnabled(true);
+                    updatePlayButtonState(true);
+                    Toast.makeText(this, "I.G.I. 2 installed from setup.exe!",
+                        Toast.LENGTH_LONG).show();
+                    maybeAutoPlay();
+                });
+            } catch (Throwable t) {
+                Log.e(TAG, "Setup post-processing failed", t);
+                failSetupInstall("INSTALL FAILED: " + t.getMessage());
+            }
+        }, "setup-install").start();
+    }
+
+    private void failSetupInstall(String message) {
+        Log.e(TAG, message);
+        runOnUiThread(() -> {
+            statusText.setText(message);
+            progressBar.setIndeterminate(false);
+            progressBar.setVisibility(View.GONE);
+            installFromSetupRunning = false;
+            installSetupBtn.setEnabled(true);
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+        });
+    }
+
+    /** Finds the folder inside an extracted installer that holds the retail game data. */
+    private File findGameDataRoot(File dir, int depth) {
+        if (dir == null || !dir.isDirectory() || depth > 5) {
+            return null;
+        }
+        if (looksLikeGameRoot(dir)) {
+            return dir;
+        }
+        File[] children = dir.listFiles();
+        if (children == null) {
+            return null;
+        }
+        for (File child : children) {
+            if (child.isDirectory()) {
+                File found = findGameDataRoot(child, depth + 1);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean looksLikeGameRoot(File dir) {
+        boolean missions = false;
+        boolean common = false;
+        boolean menusystem = false;
+        File[] children = dir.listFiles();
+        if (children == null) {
+            return false;
+        }
+        for (File child : children) {
+            String name = child.getName().toLowerCase(Locale.US);
+            if (name.equals("missions") && child.isDirectory()) missions = true;
+            if (name.equals("common") && child.isDirectory()) common = true;
+            if (name.equals("menusystem") && child.isDirectory()) menusystem = true;
+        }
+        return missions && (common || menusystem);
+    }
+
+    private File findFileNamed(File dir, String wanted, int depth) {
+        if (dir == null || !dir.isDirectory() || depth > 5) {
+            return null;
+        }
+        File[] children = dir.listFiles();
+        if (children == null) {
+            return null;
+        }
+        for (File child : children) {
+            if (child.isFile() && child.getName().equalsIgnoreCase(wanted)) {
+                return child;
+            }
+        }
+        for (File child : children) {
+            if (child.isDirectory()) {
+                File found = findFileNamed(child, wanted, depth + 1);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private void copyFile(File source, File target) throws IOException {
+        File parent = target.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        try (InputStream in = new java.io.FileInputStream(source);
+             OutputStream out = new FileOutputStream(target)) {
+            byte[] buffer = new byte[262144];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+        }
+    }
+
+    private void copyDirectory(File source, File target) throws IOException {
+        if (source.isDirectory()) {
+            if (!target.exists() && !target.mkdirs()) {
+                throw new IOException("Could not create " + target.getAbsolutePath());
+            }
+            File[] children = source.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    copyDirectory(child, new File(target, child.getName()));
+                }
+            }
+        } else {
+            copyFile(source, target);
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_SELECT_SETUP_EXE && resultCode == RESULT_OK && data != null) {
+            Uri setupUri = data.getData();
+            if (setupUri != null) {
+                try {
+                    getContentResolver().takePersistableUriPermission(
+                        setupUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (Exception ignored) {}
+                bindExtractServiceAndInstall(setupUri);
+            }
+            return;
+        }
         if (requestCode == REQUEST_SELECT_GAME_FOLDER && resultCode == RESULT_OK && data != null) {
             Uri treeUri = data.getData();
             if (treeUri != null) {
@@ -1089,8 +1481,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     public void onBackPressed() {
         // If the soft keyboard is showing, the first Back dismisses it (and clears the
-        // keyboard-icon request) instead of navigating — standard Android behaviour.
-        if (isGameStarted && imeShown) {
+        // keyboard request) instead of navigating — standard Android behaviour. Use the
+        // IME's real state, not the cached flag, so a keyboard the system already closed
+        // does not swallow the Back press.
+        boolean keyboardUp = isImeVisible();
+        boolean requested = false;
+        if (isGameStarted) {
+            try {
+                requested = NativeEngine.nativeIsKeyboardRequested();
+            } catch (Throwable ignored) {}
+        }
+        if (isGameStarted && (keyboardUp || requested)) {
             hideSoftKeyboard();
             NativeEngine.nativeSetKeyboardRequested(false);
             return;
@@ -1256,6 +1657,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 updateSocialsButtonVisibility();
                 updateGithubButtonVisibility();
                 updateLoadGameButtonVisibility();
+                updateKeyboardButtonVisibility();
                 if (imeHandler != null) {
                     imeHandler.postDelayed(this, 250);
                 }
@@ -1266,32 +1668,82 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private void updateImeVisibility() {
         // Show the keyboard when a text field is focused OR when the player asked for it
-        // via the keyboard icon in the main menu (under the cheats gear), so player names
-        // and other menu text can be typed even when the automatic focus detection does
-        // not fire. The icon toggles the request; Back clears it.
-        boolean focused = isGameStarted && (NativeEngine.nativeIsTextFieldFocused()
-            || NativeEngine.nativeIsKeyboardRequested());
-        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-        if (focused && !imeShown) {
-            if (hiddenInput != null && imm != null) {
-                hiddenInput.requestFocus();
-                imm.showSoftInput(hiddenInput, 0);
+        // via the keyboard button. The requested flag is what makes text entry possible
+        // on screens whose focus the engine does not report (the retail menus), and it is
+        // cleared by Back or by tapping the keyboard button again.
+        boolean focused;
+        try {
+            focused = isGameStarted && (NativeEngine.nativeIsTextFieldFocused()
+                || NativeEngine.nativeIsKeyboardRequested());
+        } catch (Throwable t) {
+            focused = false;
+        }
+
+        boolean visible = isImeVisible();
+        if (focused) {
+            long now = SystemClock.uptimeMillis();
+            if (!visible && now - lastImeShowAttemptMs >= 700) {
+                lastImeShowAttemptMs = now;
+                Log.i(TAG, "IME wanted (focused=" + focused + "), showing keyboard");
+                showSoftKeyboard();
             }
-            imeShown = true;
-        } else if (!focused && imeShown) {
+        } else if (visible) {
             hideSoftKeyboard();
         }
     }
 
-    private void hideSoftKeyboard() {
-        if (!imeShown) {
+    /** True while an IME is actually displayed and bound to our input connection. */
+    private boolean isImeVisible() {
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        return imm != null && imm.isAcceptingText();
+    }
+
+    /**
+     * Brings the soft keyboard up for the hidden EditText.
+     *
+     * The game draws its UI on a SurfaceView, so there is no real text View to focus;
+     * hiddenInput is the IME target and its TextWatcher forwards typed characters. The
+     * focus request has to run before the show call (focus is applied on the next layout
+     * pass), and on some OEM keyboards showSoftInput is ignored, so the toggle fallback
+     * is the second attempt.
+     */
+    private void showSoftKeyboard() {
+        if (hiddenInput == null) {
             return;
         }
-        imeShown = false;
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm == null) {
+            return;
+        }
+        hiddenInput.setVisibility(View.VISIBLE);
+        hiddenInput.setFocusableInTouchMode(true);
+        if (!hiddenInput.hasFocus()) {
+            hiddenInput.requestFocus();
+        }
+        hiddenInput.post(() -> {
+            boolean shown = imm.showSoftInput(hiddenInput, InputMethodManager.SHOW_IMPLICIT);
+            Log.i(TAG, "IME showSoftInput returned " + shown);
+            if (!shown) {
+                hiddenInput.postDelayed(() -> {
+                    if (!imm.isAcceptingText()) {
+                        Log.w(TAG, "IME still hidden after showSoftInput; trying toggleSoftInput");
+                        try {
+                            imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0);
+                        } catch (Throwable t) {
+                            Log.w(TAG, "IME toggleSoftInput failed", t);
+                        }
+                    }
+                }, 500);
+            }
+        });
+    }
+
+    private void hideSoftKeyboard() {
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (hiddenInput != null && imm != null) {
             imm.hideSoftInputFromWindow(hiddenInput.getWindowToken(), 0);
             hiddenInput.setText("");
+            hiddenInput.clearFocus();
         }
     }
 
@@ -1307,6 +1759,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     protected void onDestroy() {
         quitWatcherStopped = true;
         if (quitWatcherThread != null) quitWatcherThread.interrupt();
+        if (extractServiceBound) {
+            try {
+                unbindService(extractConnection);
+            } catch (Exception ignored) {}
+            extractServiceBound = false;
+            extractService = null;
+        }
         if (imeHandler != null && imePoller != null) {
             imeHandler.removeCallbacks(imePoller);
         }
@@ -1490,6 +1949,75 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (show != loadGameButtonShown) {
             loadGameButtonShown = show;
             loadGameButton.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private void setupKeyboardButton() {
+        float density = getResources().getDisplayMetrics().density;
+        keyboardButton = new Button(this);
+        keyboardButton.setText("KEYBOARD");
+        keyboardButton.setTextSize(11);
+        keyboardButton.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        keyboardButton.setTextColor(Color.rgb(10, 20, 38));
+        keyboardButton.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(235, 170, 70));
+        bg.setStroke((int)(1.5f * density), Color.rgb(255, 220, 150));
+        bg.setCornerRadius(6 * density);
+        keyboardButton.setBackground(bg);
+        keyboardButton.setPadding(
+                (int)(14 * density), (int)(8 * density), (int)(14 * density), (int)(8 * density));
+
+        // Bottom-right: the retail menu's own controls are centred, the LOAD GAME and
+        // GitHub buttons own the bottom-left corner, and the cheats gear is top-right.
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        params.gravity = Gravity.BOTTOM | Gravity.END;
+        params.bottomMargin = (int)(16 * density);
+        params.rightMargin = (int)(12 * density);
+        keyboardButton.setOnClickListener(v -> {
+            if (isImeVisible()) {
+                hideSoftKeyboard();
+                try {
+                    NativeEngine.nativeSetKeyboardRequested(false);
+                } catch (Throwable ignored) {}
+            } else {
+                // Ask the engine to keep the field available, then show the IME right
+                // away instead of waiting for the next 250 ms poll. The requested flag
+                // also keeps the keyboard up while the player types.
+                try {
+                    NativeEngine.nativeSetKeyboardRequested(true);
+                } catch (Throwable ignored) {}
+                showSoftKeyboard();
+            }
+            updateKeyboardButtonVisibility();
+        });
+        rootLayout.addView(keyboardButton, params);
+        keyboardButton.setVisibility(View.GONE);
+        keyboardButtonShown = false;
+    }
+
+    private void updateKeyboardButtonVisibility() {
+        if (keyboardButton == null) {
+            return;
+        }
+        // Shown on the retail main menu (where profiles and names are edited) and on any
+        // screen where the engine reports a focused text field or an outstanding keyboard
+        // request. Hidden in-mission, during loading and on the splash.
+        boolean show = false;
+        if (isGameStarted && (splashLayout == null || splashLayout.getVisibility() != View.VISIBLE)) {
+            try {
+                show = NativeEngine.nativeIsMainMenu()
+                    || NativeEngine.nativeIsTextFieldFocused()
+                    || NativeEngine.nativeIsKeyboardRequested();
+            } catch (Throwable ignored) {
+                // Native library not loaded yet: stay hidden until the game is up.
+                show = false;
+            }
+        }
+        if (show != keyboardButtonShown) {
+            keyboardButtonShown = show;
+            keyboardButton.setVisibility(show ? View.VISIBLE : View.GONE);
         }
     }
 
