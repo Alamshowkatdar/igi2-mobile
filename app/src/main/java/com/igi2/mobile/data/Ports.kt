@@ -24,6 +24,9 @@ object NativePort {
     const val VERSION = "2.0.0"
     const val ACTIVITY = "com.projectigi2.app.MainActivity"
     const val EXTRA_AUTO_PLAY = "auto_play"
+    const val EXTRA_LAN_ROLE = "lan_role"
+    const val EXTRA_LAN_NAME = "lan_name"
+    const val EXTRA_LAN_HOST = "lan_host"
 
     const val PROJECT_URL =
         "https://github.com/rayishere0/IGI-2-Covert-Strike-Android"
@@ -36,11 +39,14 @@ object NativePort {
     fun find(context: Context): Install? =
         if (isSupported) Install(context.packageName, VERSION) else null
 
-    fun launch(context: Context): Boolean {
+    fun launch(context: Context, lanRole: String = "", lanName: String = "", lanHost: String = ""): Boolean {
         if (!isSupported) return false
         val intent = Intent()
             .setClassName(context.packageName, ACTIVITY)
             .putExtra(EXTRA_AUTO_PLAY, true)
+        if (lanRole.isNotBlank()) intent.putExtra(EXTRA_LAN_ROLE, lanRole)
+        if (lanName.isNotBlank()) intent.putExtra(EXTRA_LAN_NAME, lanName)
+        if (lanHost.isNotBlank()) intent.putExtra(EXTRA_LAN_HOST, lanHost)
         return runCatching { context.startActivity(intent) }.isSuccess
     }
 

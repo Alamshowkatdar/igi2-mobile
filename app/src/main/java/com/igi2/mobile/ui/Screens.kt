@@ -66,6 +66,7 @@ fun HomeScreen(
     playLabel: String,
     onPlay: () -> Unit,
     onMissions: () -> Unit,
+    onLan: () -> Unit,
     onSetup: () -> Unit,
     onSettings: () -> Unit,
     onAbout: () -> Unit,
@@ -189,6 +190,8 @@ fun HomeScreen(
         )
         Spacer(Modifier.height(10.dp))
         Igi2Button(text = "MISSION BRIEFINGS", onClick = onMissions)
+        Spacer(Modifier.height(10.dp))
+        Igi2Button(text = "LAN LOBBY  //  BETA", onClick = onLan)
         Spacer(Modifier.height(10.dp))
         Igi2Button(text = "SETUP GUIDE", onClick = onSetup)
         Spacer(Modifier.height(10.dp))

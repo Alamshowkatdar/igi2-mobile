@@ -236,6 +236,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
         intent = getIntent();
         autoPlayRequested = intent != null && intent.getBooleanExtra("auto_play", false);
+        // LAN lobby hand-off: the Compose launcher records the player's role and peers here.
+        // Gameplay sync is not implemented yet, so this is only logged for diagnostics.
+        if (intent != null) {
+            String lanRole = intent.getStringExtra("lan_role");
+            String lanName = intent.getStringExtra("lan_name");
+            String lanHost = intent.getStringExtra("lan_host");
+            if (lanRole != null && !lanRole.isEmpty()) {
+                Log.i(TAG, "LAN hand-off: role=" + lanRole
+                    + " name=" + (lanName == null ? "" : lanName)
+                    + " host=" + (lanHost == null ? "" : lanHost));
+            }
+        }
 
         // Request storage permissions on app startup
         requestStoragePermissionsOnStart();

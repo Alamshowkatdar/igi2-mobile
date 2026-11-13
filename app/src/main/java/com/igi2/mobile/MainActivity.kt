@@ -33,12 +33,13 @@ import com.igi2.mobile.ui.DisclaimerDialog
 import com.igi2.mobile.ui.HomeScreen
 import com.igi2.mobile.ui.Igi2Black
 import com.igi2.mobile.ui.Igi2Theme
+import com.igi2.mobile.ui.LanScreen
 import com.igi2.mobile.ui.MissionsScreen
 import com.igi2.mobile.ui.SettingsScreen
 import com.igi2.mobile.ui.SetupScreen
 import com.igi2.mobile.web.WebPortActivity
 
-private enum class Screen { HOME, MISSIONS, SETUP, SETTINGS, ABOUT }
+private enum class Screen { HOME, MISSIONS, LAN, SETUP, SETTINGS, ABOUT }
 
 class MainActivity : ComponentActivity() {
 
@@ -135,6 +136,7 @@ private fun App(repository: LauncherRepository) {
                 playLabel = playLabel,
                 onPlay = play,
                 onMissions = { screen = Screen.MISSIONS },
+                onLan = { screen = Screen.LAN },
                 onSetup = { screen = Screen.SETUP },
                 onSettings = { screen = Screen.SETTINGS },
                 onAbout = { screen = Screen.ABOUT },
@@ -144,6 +146,16 @@ private fun App(repository: LauncherRepository) {
             Screen.MISSIONS -> MissionsScreen(
                 onBack = { screen = Screen.HOME },
                 onOpenBriefings = { openUrl(context, "https://playigi.com/missions.html") }
+            )
+
+            Screen.LAN -> LanScreen(
+                onBack = { screen = Screen.HOME },
+                onStartGame = { role, name, host ->
+                    if (!NativePort.launch(context, role, name, host)) {
+                        repository.message("Could not start the built-in engine.")
+                        screen = Screen.SETUP
+                    }
+                }
             )
 
             Screen.SETUP -> SetupScreen(
