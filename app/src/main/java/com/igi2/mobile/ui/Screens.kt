@@ -425,10 +425,24 @@ fun SetupScreen(
 
             Spacer(Modifier.height(14.dp))
             TerminalPanel {
-                SectionLabel("02  //  YOUR PC GAME FOLDER")
+                SectionLabel("02  //  INSTALL FROM SETUP.EXE")
                 Spacer(Modifier.height(8.dp))
                 BodyText(
-                    "Copy the pc folder from your I.G.I. 2 installation to the phone, for " +
+                    "This is the easiest path and needs no PC. Put your I.G.I. 2 setup.exe " +
+                        "(GOG or retail) anywhere on the phone, open the game, then press " +
+                        "INSTALL FROM SETUP.EXE and pick the file. It is unpacked on-device."
+                )
+                Spacer(Modifier.height(8.dp))
+                KeyValueRow("Needs", "About 3.5 GB free while unpacking")
+                KeyValueRow("Leaves behind", "Nothing from the installer")
+            }
+
+            Spacer(Modifier.height(14.dp))
+            TerminalPanel {
+                SectionLabel("03  //  OR COPY THE PC GAME FOLDER")
+                Spacer(Modifier.height(8.dp))
+                BodyText(
+                    "If you already have the game folder, copy its pc folder to the phone, for " +
                         "example to /sdcard/Download/IGI 2/pc. Use a file manager or a USB cable."
                 )
                 Spacer(Modifier.height(8.dp))
@@ -446,12 +460,13 @@ fun SetupScreen(
 
             Spacer(Modifier.height(14.dp))
             TerminalPanel {
-                SectionLabel("03  //  INSTALL THE FILES IN-APP")
+                SectionLabel("04  //  INSTALL THE FILES IN-APP")
                 Spacer(Modifier.height(8.dp))
                 BodyText(
                     "Press OPEN I.G.I. 2, then SELECT GAME FOLDER and pick the pc folder you " +
                         "copied. The engine verifies it, copies it into this app's private " +
-                        "storage and enables PLAY. Later launches reuse that copy."
+                        "storage and enables PLAY. Later launches reuse that copy. Both routes " +
+                        "end in the same place, so use whichever is easier."
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
