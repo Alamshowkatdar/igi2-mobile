@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // The player may have installed or removed the native port while this activity was paused.
+        // Re-check the built-in engine after the player returns from the game activity.
         if (::repository.isInitialized) repository.refreshNative()
     }
 }

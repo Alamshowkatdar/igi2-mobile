@@ -82,7 +82,7 @@ class LauncherRepository private constructor(context: Context) {
         _state.update { it.copy(native = native, nativeChecked = true) }
     }
 
-    /** Re-checks the installed native port and probes the official browser port. */
+    /** Re-checks the built-in engine and probes the optional browser port. */
     fun refreshPorts() {
         if (_state.value.checking) return
         val native = NativePort.find(app)

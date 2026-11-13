@@ -4,7 +4,7 @@ import android.content.Context
 
 object Net {
     // A normal Chrome for Android fingerprint. WebView sends "wv" by default, which some hosts treat
-    // differently; the playigi.com pages and the community port's release page both serve this happily.
+    // differently; the playigi.com pages and the engine's source page both serve this happily.
     const val USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
