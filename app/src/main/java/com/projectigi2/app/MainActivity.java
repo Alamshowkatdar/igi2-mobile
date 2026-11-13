@@ -68,7 +68,7 @@ import java.util.Locale;
 
 public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final String TAG = "ProjectIGI2";
-    private static final String ASSET_VERSION = "v22_perm_on_start";
+    private static final String ASSET_VERSION = "v23_igi2_menus";
     private static final int REQUEST_SELECT_GAME_FOLDER = 2001;
     private static final int REQUEST_STORAGE_PERMISSIONS = 1002;
     private static final String PREFS_NAME = "projectigi_prefs";
@@ -198,14 +198,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     }
                 } else {
                     Log.w(TAG, "Intent bundle is null, explicitly falling back to default string.");
-                    gameDir = "/data/user/0/com.projectigi2.app/files";
+                    gameDir = fallbackGameDir;
                 }
             } catch (Throwable e) {
                 Log.e(TAG, "Failed to parse intent bundle safely.", e);
-                gameDir = "/data/user/0/com.projectigi2.app/files";
+                gameDir = fallbackGameDir;
             }
         } else {
-            gameDir = "/data/user/0/com.projectigi2.app/files";
+            gameDir = fallbackGameDir;
         }
 
         intent = getIntent();
@@ -985,9 +985,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     continue;
                 }
                 if (sawRunning && isResumed && isGameStarted) {
-                    Log.i(TAG, "Game exited in the foreground (Quit): closing the app");
+                    Log.i(TAG, "Game exited in the foreground (Quit): returning to the launcher");
                     gameQuitRequested = true;
-                    runOnUiThread(() -> finishAffinity());
+                    runOnUiThread(() -> {
+                        // The launcher shares this process, so it cannot simply be resumed:
+                        // onDestroy kills the process to give the next PLAY a fresh CoreCLR.
+                        // Ask for a new launcher task first; the system restarts the process
+                        // for it after this activity's teardown.
+                        try {
+                            startActivity(new Intent(Intent.ACTION_MAIN)
+                                .setClassName(getPackageName(), "com.igi2.mobile.MainActivity")
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+                        } catch (Exception e) {
+                            Log.w(TAG, "Could not reopen the launcher after Quit", e);
+                        }
+                        finishAffinity();
+                    });
                     break;
                 }
             }
