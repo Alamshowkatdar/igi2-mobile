@@ -21,8 +21,8 @@ android {
         applicationId = "com.igi2.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "2.0.2"
+        versionCode = 5
+        versionName = "2.0.3"
 
         vectorDrawables {
             useSupportLibrary = true
