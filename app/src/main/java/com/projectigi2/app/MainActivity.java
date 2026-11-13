@@ -1359,8 +1359,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String filesDir = getFilesDir().getAbsolutePath();
         String nativeLibDir = getApplicationInfo().nativeLibraryDir;
 
+        // Forward the LAN lobby hand-off into the engine as options flags.
+        String options = "-" + rendererBackend;
+        Intent launchIntent = getIntent();
+        if (launchIntent != null) {
+            String lanRole = launchIntent.getStringExtra("lan_role");
+            String lanName = launchIntent.getStringExtra("lan_name");
+            String lanHost = launchIntent.getStringExtra("lan_host");
+            if (lanRole != null && !lanRole.trim().isEmpty()) {
+                options += " --lan-role=" + lanRole.trim();
+                if (lanName != null && !lanName.trim().isEmpty()) {
+                    options += " --lan-name=" + lanName.trim().replace(" ", "_");
+                }
+                if (lanHost != null && !lanHost.trim().isEmpty()) {
+                    options += " --lan-host=" + lanHost.trim();
+                }
+            }
+        }
+
         Log.i(TAG, "Calling nativeStartGame: " + landscapeWidth + "x" + landscapeHeight);
-        boolean started = NativeEngine.nativeStartGame(holder.getSurface(), landscapeWidth, landscapeHeight, filesDir, nativeLibDir, "-" + rendererBackend);
+        boolean started = NativeEngine.nativeStartGame(holder.getSurface(), landscapeWidth, landscapeHeight, filesDir, nativeLibDir, options);
         if (started) {
             startQuitWatcher();
         } else {
